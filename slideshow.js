@@ -1,16 +1,19 @@
 /* =========================================================
-   SLIDESHOW (PRO CROSSFADE) — FIXED
-   - Uses 2 layers (A/B) with real crossfade
+   SLIDESHOW (PRO CROSSFADE – CLEAN)
+   - Everyday images always play
+   - Day-of-week images only play on that day
    - 10s per slide
-   - Preloads/decodes the EXACT URL it will display (no hard pop)
+   - Uses 2 layers (A/B) for flawless crossfade
+   - Midnight auto-refresh for day changes
 ========================================================= */
 
 const SLIDE_SECONDS = 10;
 const FADE_MS = 900;
 
-// ✅ Stable cache-bust value (same for the whole session)
-const CACHE_VERSION = Date.now(); // changes when you reload page
+/* Stable cache version for this session */
+const CACHE_VERSION = Date.now();
 
+/* Everyday slides */
 const everydayCandidates = [
   "every1.jpg",
   "every2.jpg",
@@ -19,6 +22,7 @@ const everydayCandidates = [
   "every5.jpg"
 ];
 
+/* Day-specific slides */
 const dayCandidates = {
   mon: ["mon1.jpg","mon2.jpg","mon3.jpg"],
   tue: ["tue1.jpg","tue2.jpg","tue3.jpg"],
@@ -29,20 +33,18 @@ const dayCandidates = {
   sun: ["sun1.jpg","sun2.jpg","sun3.jpg"]
 };
 
+/* Elements */
 const slideA = document.getElementById("slideA");
 const slideB = document.getElementById("slideB");
-const status = document.getElementById("status");
 
+/* State */
 let playlist = [];
 let index = 0;
 let showingA = true;
 let tickTimer = null;
 let midnightTimer = null;
 
-function setStatus(msg){
-  if (status) status.textContent = msg;
-}
-
+/* Helpers */
 function dayKeyToronto(){
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Toronto",
@@ -50,7 +52,6 @@ function dayKeyToronto(){
   }).format(new Date()).toLowerCase();
 }
 
-// ✅ stable URL per file (no Date.now per call)
 function urlFor(file){
   return `${file}?v=${CACHE_VERSION}`;
 }
@@ -64,8 +65,8 @@ async function exists(file){
   }
 }
 
-/* Preload & decode the EXACT url */
-function preloadAndDecodeUrl(url){
+/* Preload & decode exact URL */
+function preloadAndDecode(url){
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = async () => {
@@ -79,13 +80,12 @@ function preloadAndDecodeUrl(url){
   });
 }
 
-function swapToUrl(url){
+/* Crossfade swap */
+function swapTo(url){
   const incoming = showingA ? slideB : slideA;
   const outgoing = showingA ? slideA : slideB;
 
-  // Put incoming underneath, then fade it in
   incoming.src = url;
-
   incoming.classList.add("isVisible");
   outgoing.classList.remove("isVisible");
 
@@ -97,19 +97,15 @@ function stop(){
   tickTimer = null;
 }
 
+/* Start slideshow */
 async function start(){
   stop();
 
-  if (!playlist.length){
-    setStatus("No slideshow images found.");
-    return;
-  }
-
-  setStatus(`Slides: ${playlist.length} • ${SLIDE_SECONDS}s • Today: ${dayKeyToronto().toUpperCase()}`);
+  if (!playlist.length) return;
 
   index = 0;
 
-  // Show first slide immediately
+  /* First slide immediately */
   slideA.src = urlFor(playlist[index]);
   slideA.classList.add("isVisible");
   slideB.classList.remove("isVisible");
@@ -117,32 +113,35 @@ async function start(){
 
   if (playlist.length === 1) return;
 
-  // Preload next slide URL ahead of time
+  /* Preload next */
   let nextIndex = (index + 1) % playlist.length;
-  preloadAndDecodeUrl(urlFor(playlist[nextIndex])).catch(()=>{});
+  preloadAndDecode(urlFor(playlist[nextIndex])).catch(()=>{});
 
   tickTimer = setInterval(async () => {
     index = (index + 1) % playlist.length;
     const url = urlFor(playlist[index]);
 
     try{
-      await preloadAndDecodeUrl(url); // ✅ decode the SAME url we will show
+      await preloadAndDecode(url);
     }catch{
-      return; // skip if an image is missing/bad
+      return;
     }
 
-    swapToUrl(url);
+    swapTo(url);
 
-    // Preload following slide
     nextIndex = (index + 1) % playlist.length;
-    preloadAndDecodeUrl(urlFor(playlist[nextIndex])).catch(()=>{});
+    preloadAndDecode(urlFor(playlist[nextIndex])).catch(()=>{});
 
   }, SLIDE_SECONDS * 1000);
 }
 
+/* Build playlist */
 async function buildPlaylist(){
   const key = dayKeyToronto();
-  const candidates = [...everydayCandidates, ...(dayCandidates[key] || [])];
+  const candidates = [
+    ...everydayCandidates,
+    ...(dayCandidates[key] || [])
+  ];
 
   const next = [];
   for (const f of candidates){
@@ -153,7 +152,8 @@ async function buildPlaylist(){
   await start();
 }
 
-function msUntilLocalMidnight(){
+/* Midnight auto-refresh */
+function msUntilMidnight(){
   const now = new Date();
   const next = new Date(now);
   next.setHours(24,0,0,0);
@@ -162,13 +162,13 @@ function msUntilLocalMidnight(){
 
 function scheduleMidnight(){
   if (midnightTimer) clearTimeout(midnightTimer);
+
   midnightTimer = setTimeout(async () => {
     await buildPlaylist();
     scheduleMidnight();
-  }, msUntilLocalMidnight());
+  }, msUntilMidnight());
 }
 
 /* Boot */
-setStatus("Loading slideshow…");
 buildPlaylist();
 scheduleMidnight();
