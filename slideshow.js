@@ -1,15 +1,16 @@
 /* =========================================================
-   SLIDESHOW (PRO CROSSFADE)
-   - Everyday images always play
-   - Day-of-week images only play on that day
+   SLIDESHOW (PRO CROSSFADE) — FIXED
+   - Uses 2 layers (A/B) with real crossfade
    - 10s per slide
-   - Uses 2 layers (A/B) so there is NEVER a flash/hard switch
+   - Preloads/decodes the EXACT URL it will display (no hard pop)
 ========================================================= */
 
 const SLIDE_SECONDS = 10;
 const FADE_MS = 900;
 
-// Update these lists to your real filenames
+// ✅ Stable cache-bust value (same for the whole session)
+const CACHE_VERSION = Date.now(); // changes when you reload page
+
 const everydayCandidates = [
   "every1.jpg",
   "every2.jpg",
@@ -34,7 +35,7 @@ const status = document.getElementById("status");
 
 let playlist = [];
 let index = 0;
-let showingA = true; // A is visible first
+let showingA = true;
 let tickTimer = null;
 let midnightTimer = null;
 
@@ -49,9 +50,9 @@ function dayKeyToronto(){
   }).format(new Date()).toLowerCase();
 }
 
-// Avoid stale caching when you overwrite images
-function cacheBust(file){
-  return `${file}?v=${Date.now()}`;
+// ✅ stable URL per file (no Date.now per call)
+function urlFor(file){
+  return `${file}?v=${CACHE_VERSION}`;
 }
 
 async function exists(file){
@@ -63,30 +64,28 @@ async function exists(file){
   }
 }
 
-/* Preload & decode the *next* image before fading */
-function preloadAndDecode(file){
+/* Preload & decode the EXACT url */
+function preloadAndDecodeUrl(url){
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = async () => {
       try{
-        // decode() makes Chrome render without a flash
         if (img.decode) await img.decode();
       }catch{}
       resolve();
     };
     img.onerror = reject;
-    img.src = cacheBust(file);
+    img.src = url;
   });
 }
 
-function swapTo(file){
+function swapToUrl(url){
   const incoming = showingA ? slideB : slideA;
   const outgoing = showingA ? slideA : slideB;
 
-  // Set incoming src (already preloaded, but this keeps URL consistent)
-  incoming.src = cacheBust(file);
+  // Put incoming underneath, then fade it in
+  incoming.src = url;
 
-  // Fade in incoming, fade out outgoing
   incoming.classList.add("isVisible");
   outgoing.classList.remove("isVisible");
 
@@ -108,36 +107,35 @@ async function start(){
 
   setStatus(`Slides: ${playlist.length} • ${SLIDE_SECONDS}s • Today: ${dayKeyToronto().toUpperCase()}`);
 
-  // Show first slide instantly on A
   index = 0;
-  slideA.src = cacheBust(playlist[index]);
+
+  // Show first slide immediately
+  slideA.src = urlFor(playlist[index]);
   slideA.classList.add("isVisible");
   slideB.classList.remove("isVisible");
   showingA = true;
 
   if (playlist.length === 1) return;
 
-  // Preload next slide ahead of time
+  // Preload next slide URL ahead of time
   let nextIndex = (index + 1) % playlist.length;
-  preloadAndDecode(playlist[nextIndex]).catch(()=>{});
+  preloadAndDecodeUrl(urlFor(playlist[nextIndex])).catch(()=>{});
 
   tickTimer = setInterval(async () => {
     index = (index + 1) % playlist.length;
+    const url = urlFor(playlist[index]);
 
-    // Preload/decode the slide we’re about to show (guarantees no flash)
     try{
-      await preloadAndDecode(playlist[index]);
+      await preloadAndDecodeUrl(url); // ✅ decode the SAME url we will show
     }catch{
-      // If preload fails, just skip this slide gracefully
-      return;
+      return; // skip if an image is missing/bad
     }
 
-    // Crossfade to it
-    swapTo(playlist[index]);
+    swapToUrl(url);
 
-    // Preload following slide for the next tick
+    // Preload following slide
     nextIndex = (index + 1) % playlist.length;
-    preloadAndDecode(playlist[nextIndex]).catch(()=>{});
+    preloadAndDecodeUrl(urlFor(playlist[nextIndex])).catch(()=>{});
 
   }, SLIDE_SECONDS * 1000);
 }
@@ -151,12 +149,10 @@ async function buildPlaylist(){
     if (await exists(f)) next.push(f);
   }
 
-  // If playlist changes mid-run, restart cleanly
   playlist = next;
   await start();
 }
 
-/* Midnight refresh so day-specific promos change automatically */
 function msUntilLocalMidnight(){
   const now = new Date();
   const next = new Date(now);
