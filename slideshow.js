@@ -1,19 +1,20 @@
 /* =========================================================
-   SLIDESHOW (PRO CROSSFADE – CLEAN)
-   - Everyday images always play
-   - Day-of-week images only play on that day
-   - 10s per slide
+   SLIDESHOW (PRO CROSSFADE – IMAGES + MP4)
+   - Images: fixed SLIDE_SECONDS per slide
+   - Videos (.mp4): play through, then advance on ended
+   - Day-of-week slides only play on that day (Toronto time)
    - Uses 2 layers (A/B) for flawless crossfade
    - Midnight auto-refresh for day changes
 ========================================================= */
 
-const SLIDE_SECONDS = 10;
+const SLIDE_SECONDS = 10;   // images only
 const FADE_MS = 900;
+const VIDEO_FAILSAFE_MS = 60000; // if a video hangs, skip after 60s
 
 /* Stable cache version for this session */
 const CACHE_VERSION = Date.now();
 
-/* Everyday slides */
+/* Everyday slides (you can add .mp4 here too) */
 const everydayCandidates = [
   "every1.jpg",
   "every2.jpg",
@@ -22,7 +23,7 @@ const everydayCandidates = [
   "every5.jpg"
 ];
 
-/* Day-specific slides */
+/* Day-specific slides (you can add .mp4 here too) */
 const dayCandidates = {
   mon: ["mon1.jpg","mon2.jpg","mon3.jpg"],
   tue: ["tue1.jpg","tue2.jpg","tue3.jpg"],
@@ -33,15 +34,19 @@ const dayCandidates = {
   sun: ["sun1.jpg","sun2.jpg","sun3.jpg"]
 };
 
-/* Elements */
+/* Elements (must exist in slideshow.html) */
 const slideA = document.getElementById("slideA");
 const slideB = document.getElementById("slideB");
+const videoA = document.getElementById("videoA");
+const videoB = document.getElementById("videoB");
 
 /* State */
 let playlist = [];
 let index = 0;
-let showingA = true;
-let tickTimer = null;
+let showingLayer = "A";          // "A" or "B" (which layer is currently visible)
+let currentKind = "img";         // "img" or "video"
+let timer = null;
+let videoFailsafe = null;
 let midnightTimer = null;
 
 /* Helpers */
@@ -52,7 +57,12 @@ function dayKeyToronto(){
   }).format(new Date()).toLowerCase();
 }
 
+function isVideo(file){
+  return /\.mp4(\?.*)?$/i.test(file);
+}
+
 function urlFor(file){
+  // cache busting helps signage devices update reliably
   return `${file}?v=${CACHE_VERSION}`;
 }
 
@@ -65,14 +75,12 @@ async function exists(file){
   }
 }
 
-/* Preload & decode exact URL */
-function preloadAndDecode(url){
+/* Preload & decode image URL */
+function preloadAndDecodeImage(url){
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = async () => {
-      try{
-        if (img.decode) await img.decode();
-      }catch{}
+      try{ if (img.decode) await img.decode(); } catch {}
       resolve();
     };
     img.onerror = reject;
@@ -80,59 +88,177 @@ function preloadAndDecode(url){
   });
 }
 
-/* Crossfade swap */
-function swapTo(url){
-  const incoming = showingA ? slideB : slideA;
-  const outgoing = showingA ? slideA : slideB;
-
-  incoming.src = url;
-  incoming.classList.add("isVisible");
-  outgoing.classList.remove("isVisible");
-
-  showingA = !showingA;
+/* Preload video enough to start quickly */
+function preloadVideo(url){
+  return new Promise((resolve, reject) => {
+    const v = document.createElement("video");
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = "auto";
+    v.onloadeddata = () => resolve();
+    v.onerror = () => reject(new Error("video preload failed"));
+    v.src = url;
+    // Some browsers need load() to kick off buffering
+    try { v.load(); } catch {}
+  });
 }
 
-function stop(){
-  if (tickTimer) clearInterval(tickTimer);
-  tickTimer = null;
+function clearTimers(){
+  if (timer) clearTimeout(timer);
+  timer = null;
+  if (videoFailsafe) clearTimeout(videoFailsafe);
+  videoFailsafe = null;
+}
+
+/* Get element handles for a given layer */
+function layerEls(layer){
+  return layer === "A"
+    ? { img: slideA, video: videoA }
+    : { img: slideB, video: videoB };
+}
+
+/* Hide and stop everything on a layer */
+function resetLayer(layer){
+  const { img, video } = layerEls(layer);
+
+  img.classList.remove("isVisible");
+  img.removeAttribute("src");
+
+  video.classList.remove("isVisible");
+  video.pause();
+  video.removeAttribute("src");
+  // Ensures the browser releases the video resource
+  try { video.load(); } catch {}
+  video.onended = null;
+  video.onerror = null;
+}
+
+/* Crossfade to a specific slide (image or video) on the incoming layer */
+async function swapTo(file){
+  clearTimers();
+
+  const incomingLayer = (showingLayer === "A") ? "B" : "A";
+  const outgoingLayer = showingLayer;
+
+  const incoming = layerEls(incomingLayer);
+  const outgoing = layerEls(outgoingLayer);
+
+  // reset incoming layer to a clean state
+  resetLayer(incomingLayer);
+
+  const url = urlFor(file);
+
+  if (!isVideo(file)){
+    // IMAGE
+    incoming.img.src = url;
+    incoming.img.classList.add("isVisible");
+
+    // Hide outgoing
+    outgoing.img.classList.remove("isVisible");
+    outgoing.video.classList.remove("isVisible");
+    outgoing.video.pause();
+
+    // Commit state
+    showingLayer = incomingLayer;
+    currentKind = "img";
+
+    // Next slide after fixed duration
+    timer = setTimeout(nextSlide, SLIDE_SECONDS * 1000);
+    return;
+  }
+
+  // VIDEO
+  incoming.video.src = url;
+  incoming.video.muted = true;       // required for autoplay
+  incoming.video.playsInline = true;
+  incoming.video.preload = "auto";
+
+  // Advance when it ends; if it errors, skip
+  incoming.video.onended = nextSlide;
+  incoming.video.onerror = nextSlide;
+
+  // Show video layer and start playback
+  incoming.video.classList.add("isVisible");
+
+  // Hide outgoing
+  outgoing.img.classList.remove("isVisible");
+  outgoing.video.classList.remove("isVisible");
+  outgoing.video.pause();
+
+  // Commit state
+  showingLayer = incomingLayer;
+  currentKind = "video";
+
+  // Try to play; if blocked for any reason, skip
+  try{
+    const p = incoming.video.play();
+    if (p && typeof p.then === "function") {
+      p.catch(() => nextSlide());
+    }
+  }catch{
+    nextSlide();
+    return;
+  }
+
+  // Failsafe in case video never fires ended (corrupt file, stuck buffering)
+  videoFailsafe = setTimeout(nextSlide, VIDEO_FAILSAFE_MS);
+}
+
+/* Preload the next slide (best effort) */
+function preloadNext(){
+  if (!playlist.length) return;
+  const nextIndex = (index + 1) % playlist.length;
+  const nextFile = playlist[nextIndex];
+  const nextUrl = urlFor(nextFile);
+
+  if (isVideo(nextFile)){
+    preloadVideo(nextUrl).catch(()=>{});
+  }else{
+    preloadAndDecodeImage(nextUrl).catch(()=>{});
+  }
+}
+
+async function showCurrent(){
+  if (!playlist.length) return;
+
+  const file = playlist[index];
+  const url = urlFor(file);
+
+  // Try to preload the current slide (so the fade is clean)
+  try{
+    if (isVideo(file)) await preloadVideo(url);
+    else await preloadAndDecodeImage(url);
+  }catch{
+    // If preload fails, skip to next
+    nextSlide();
+    return;
+  }
+
+  await swapTo(file);
+  preloadNext();
+}
+
+function nextSlide(){
+  if (!playlist.length) return;
+  index = (index + 1) % playlist.length;
+  showCurrent();
 }
 
 /* Start slideshow */
 async function start(){
-  stop();
+  clearTimers();
 
   if (!playlist.length) return;
 
+  // Hard reset both layers so we start clean
+  resetLayer("A");
+  resetLayer("B");
+
+  // Start on A layer visible with first slide
+  showingLayer = "B"; // so first swap goes to A
   index = 0;
 
-  /* First slide immediately */
-  slideA.src = urlFor(playlist[index]);
-  slideA.classList.add("isVisible");
-  slideB.classList.remove("isVisible");
-  showingA = true;
-
-  if (playlist.length === 1) return;
-
-  /* Preload next */
-  let nextIndex = (index + 1) % playlist.length;
-  preloadAndDecode(urlFor(playlist[nextIndex])).catch(()=>{});
-
-  tickTimer = setInterval(async () => {
-    index = (index + 1) % playlist.length;
-    const url = urlFor(playlist[index]);
-
-    try{
-      await preloadAndDecode(url);
-    }catch{
-      return;
-    }
-
-    swapTo(url);
-
-    nextIndex = (index + 1) % playlist.length;
-    preloadAndDecode(urlFor(playlist[nextIndex])).catch(()=>{});
-
-  }, SLIDE_SECONDS * 1000);
+  await showCurrent();
 }
 
 /* Build playlist */
