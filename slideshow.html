@@ -5,108 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Slideshow</title>
 
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      background: #000;
-      overflow: hidden;
-    }
-
-    .stage {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
-    }
-
-    .slide {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      transition: opacity 1s ease-in-out;
-    }
-
-    .slide.isVisible {
-      opacity: 1;
-    }
-
-    .slide img,
-    .slide video {
-      width: 100%;
-      height: 100%;
-      object-fit: contain; /* change to cover if you want full bleed */
-    }
-  </style>
+  <link rel="stylesheet" href="slideshow.css" />
 </head>
 
 <body>
   <main class="stage">
-    <div id="slideA" class="slide isVisible"></div>
-    <div id="slideB" class="slide"></div>
+
+    <!-- Layer A -->
+    <img id="slideA" class="slide isVisible" alt="" />
+    <video id="videoA" class="slide" muted playsinline preload="auto"></video>
+
+    <!-- Layer B -->
+    <img id="slideB" class="slide" alt="" />
+    <video id="videoB" class="slide" muted playsinline preload="auto"></video>
+
   </main>
 
-  <script>
-    // ===== CONFIG =====
-    const slides = [
-      { type: "img",   src: "assets/slides/slide1.jpg", duration: 8000 },
-      { type: "video", src: "assets/slides/promo.mp4" },
-      { type: "img",   src: "assets/slides/slide2.jpg", duration: 8000 }
-    ];
-
-    const slideEls = [
-      document.getElementById("slideA"),
-      document.getElementById("slideB")
-    ];
-
-    let slideIndex = 0;
-    let activeLayer = 0;
-    let timer;
-
-    function showSlide() {
-      clearTimeout(timer);
-
-      const nextLayer = (activeLayer + 1) % 2;
-      const slide = slides[slideIndex];
-      const container = slideEls[nextLayer];
-
-      container.innerHTML = "";
-
-      if (slide.type === "img") {
-        const img = document.createElement("img");
-        img.src = slide.src;
-        container.appendChild(img);
-
-        timer = setTimeout(nextSlide, slide.duration);
-      }
-
-      if (slide.type === "video") {
-        const video = document.createElement("video");
-        video.src = slide.src;
-        video.autoplay = true;
-        video.muted = true;        // REQUIRED for autoplay
-        video.playsInline = true;
-        video.preload = "auto";
-
-        video.onended = nextSlide;
-        video.onerror = nextSlide;
-
-        container.appendChild(video);
-      }
-
-      slideEls[activeLayer].classList.remove("isVisible");
-      container.classList.add("isVisible");
-
-      activeLayer = nextLayer;
-    }
-
-    function nextSlide() {
-      slideIndex = (slideIndex + 1) % slides.length;
-      showSlide();
-    }
-
-    showSlide();
-  </script>
+  <script src="slideshow.js"></script>
 </body>
 </html>
