@@ -18,7 +18,7 @@ const CACHE_VERSION = Date.now();
 const everydayCandidates = [
   "every1.jpg",
   "every2.jpg",
-  "every3.jpg",
+  "every3.mp4",
   "every4.jpg",
   "every5.jpg"
 ];
