@@ -19,7 +19,7 @@ const everydayCandidates = [
   "every1.jpg",
   "every2.jpg",
   "every3.mp4",
-  "every4.jpg",
+  "every4.mp4",
   "every5.jpg"
 ];
 
