@@ -4,13 +4,20 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Slideshow</title>
+
   <link rel="stylesheet" href="slideshow.css" />
 </head>
+
 <body>
   <main class="stage">
-    <!-- Two layers for true crossfade -->
-    <img id="slideA" class="slide isVisible" alt="Slide A" />
-    <img id="slideB" class="slide" alt="Slide B" />
+
+    <!-- Layer A -->
+    <img id="slideA" class="slide isVisible" alt="" />
+    <video id="videoA" class="slide" muted playsinline preload="auto"></video>
+
+    <!-- Layer B -->
+    <img id="slideB" class="slide" alt="" />
+    <video id="videoB" class="slide" muted playsinline preload="auto"></video>
 
   </main>
 
