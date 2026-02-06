@@ -17,8 +17,8 @@ const CACHE_VERSION = Date.now();
 /* Everyday slides (you can add .mp4 here too) */
 const everydayCandidates = [
   "every1.jpg",
-  "every2.jpg",
-  "every3.mp4",
+  "every2.mp4",
+  "every3.jpg",
   "every4.mp4",
   "every5.jpg"
 ];
